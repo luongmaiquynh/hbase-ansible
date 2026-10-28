@@ -1,0 +1,64 @@
+---
+# Tắt theo thứ tự: RegionServer -> HMaster -> ZooKeeper
+# Không tắt HDFS (thuộc người quản lý Hadoop).
+# Mặc định giữ ZooKeeper chạy; tắt luôn: ansible-playbook stop.yml -e stop_zookeeper=true
+- name: Tắt RegionServer
+  hosts: hbase_regionserver
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Tắt RegionServer nếu đang chạy
+      ansible.builtin.shell: |
+        set -o pipefail
+        if {{ java_home }}/bin/jps | grep -q HRegionServer; then
+          {{ hbase_link }}/bin/hbase-daemon.sh stop regionserver
+        else
+          echo "not running"
+        fi
+      args:
+        executable: /bin/bash
+      register: rs_stop
+      changed_when: "'not running' not in rs_stop.stdout"
+
+- name: Tắt HMaster
+  hosts: hbase_master
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Tắt HMaster nếu đang chạy
+      ansible.builtin.shell: |
+        set -o pipefail
+        if {{ java_home }}/bin/jps | grep -q HMaster; then
+          {{ hbase_link }}/bin/hbase-daemon.sh stop master
+        else
+          echo "not running"
+        fi
+      args:
+        executable: /bin/bash
+      register: hm_stop
+      changed_when: "'not running' not in hm_stop.stdout"
+
+    - name: Kiểm tra HMaster đã tắt
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ java_home }}/bin/jps | grep -c HMaster || true
+      args:
+        executable: /bin/bash
+      register: hm_left
+      until: hm_left.stdout | int == 0
+      retries: 6
+      delay: 10
+      changed_when: false
+
+- name: Tắt ZooKeeper
+  hosts: zookeeper
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Tắt ZooKeeper
+      ansible.builtin.command: "{{ zk_link }}/bin/zkServer.sh stop"
+      when: stop_zookeeper | default(false) | bool
+      changed_when: true

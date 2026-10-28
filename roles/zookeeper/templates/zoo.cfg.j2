@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+tickTime=2000
+initLimit=10
+syncLimit=5
+dataDir={{ zk_data_dir }}
+clientPort={{ zk_client_port }}
+maxClientCnxns=60
+admin.serverPort={{ zk_admin_port }}
+autopurge.snapRetainCount=3
+autopurge.purgeInterval=24
+4lw.commands.whitelist=srvr,ruok,stat,mntr
+{% if groups['zookeeper'] | length > 1 %}
+{% for host in groups['zookeeper'] %}
+server.{{ loop.index }}={{ hostvars[host]['ansible_host'] | default(host) }}:{{ zk_peer_port }}:{{ zk_election_port }}
+{% endfor %}
+{% endif %}

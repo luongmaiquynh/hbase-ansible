@@ -1,0 +1,139 @@
+---
+- name: HBase | Kiểm tra tarball đã có trên server chưa
+  ansible.builtin.stat:
+    path: "{{ install_root }}/{{ hbase_tarball }}"
+  register: hbase_remote_tar
+
+- name: HBase | Tải tarball trực tiếp trên server
+  ansible.builtin.get_url:
+    url: "{{ hbase_download_url }}"
+    dest: "{{ install_root }}/{{ hbase_tarball }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+    timeout: 60
+  register: hbase_download
+  until: hbase_download is succeeded
+  retries: 3
+  delay: 10
+  when:
+    - not hbase_remote_tar.stat.exists
+    - download_on_server | bool
+
+- name: HBase | Chép tarball từ máy chạy Ansible lên server
+  ansible.builtin.copy:
+    src: "{{ tarball_src_dir }}/{{ hbase_tarball }}"
+    dest: "{{ install_root }}/{{ hbase_tarball }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+  when:
+    - not hbase_remote_tar.stat.exists
+    - not download_on_server | bool
+
+- name: HBase | Kiểm tra checksum SHA-512
+  ansible.builtin.stat:
+    path: "{{ install_root }}/{{ hbase_tarball }}"
+    checksum_algorithm: sha512
+  register: hbase_tar_sum
+  when: hbase_sha512 is defined
+
+- name: HBase | Dừng nếu checksum sai
+  ansible.builtin.assert:
+    that: hbase_tar_sum.stat.checksum == (hbase_sha512 | lower | replace(' ', ''))
+    fail_msg: "Checksum {{ hbase_tarball }} không khớp, tải lại file."
+    quiet: true
+  when: hbase_sha512 is defined
+
+- name: HBase | Tạo thư mục cài đặt
+  ansible.builtin.file:
+    path: "{{ hbase_home }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0755"
+
+- name: HBase | Giải nén
+  ansible.builtin.unarchive:
+    src: "{{ install_root }}/{{ hbase_tarball }}"
+    dest: "{{ hbase_home }}"
+    remote_src: true
+    extra_opts: ["--strip-components=1"]
+    creates: "{{ hbase_home }}/bin/hbase"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+
+- name: HBase | Symlink {{ hbase_link }}
+  ansible.builtin.file:
+    src: "{{ hbase_home }}"
+    dest: "{{ hbase_link }}"
+    state: link
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    force: true
+
+- name: HBase | Tạo thư mục tạm
+  ansible.builtin.file:
+    path: "{{ hbase_tmp_dir }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0755"
+
+- name: HBase | Cấu hình hbase-env.sh, hbase-site.xml, regionservers, backup-masters
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ hbase_home }}/conf/{{ item }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+    backup: true
+  loop:
+    - hbase-env.sh
+    - hbase-site.xml
+    - regionservers
+    - backup-masters
+
+- name: HBase | Kiểm tra cấu hình Hadoop trên node này
+  ansible.builtin.stat:
+    path: "{{ hadoop_conf_dir }}/hdfs-site.xml"
+  register: hbase_hadoop_hdfs_site
+  when: hbase_link_hadoop_conf | bool
+
+- name: HBase | Liên kết core-site.xml và hdfs-site.xml của Hadoop
+  ansible.builtin.file:
+    src: "{{ hadoop_conf_dir }}/{{ item }}"
+    dest: "{{ hbase_home }}/conf/{{ item }}"
+    state: link
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    force: true
+  loop:
+    - core-site.xml
+    - hdfs-site.xml
+  when:
+    - hbase_link_hadoop_conf | bool
+    - hbase_hadoop_hdfs_site.stat.exists
+
+- name: HBase | Cảnh báo khi không thấy cấu hình Hadoop
+  ansible.builtin.debug:
+    msg: >-
+      Không thấy {{ hadoop_conf_dir }}/hdfs-site.xml trên {{ inventory_hostname }}.
+      HBase sẽ ghi HDFS với replication mặc định 3; kiểm tra biến hadoop_home.
+  when:
+    - hbase_link_hadoop_conf | bool
+    - not hbase_hadoop_hdfs_site.stat.exists
+
+- name: HBase | Thêm HBASE_HOME vào ~/.bashrc (chỉ thêm, không xóa dòng khác)
+  ansible.builtin.lineinfile:
+    path: "~{{ service_user }}/.bashrc"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    create: true
+    mode: "0644"
+  loop:
+    - { regexp: '^export HBASE_HOME=', line: "export HBASE_HOME={{ hbase_link }}" }
+    - { regexp: '^export PATH=\$PATH:\$HBASE_HOME/bin$', line: 'export PATH=$PATH:$HBASE_HOME/bin' }
+  loop_control:
+    label: "{{ item.line }}"
+  when: manage_bashrc | bool

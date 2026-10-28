@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- {{ ansible_managed }} -->
+<configuration>
+  <property>
+    <name>hbase.cluster.distributed</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>hbase.rootdir</name>
+    <value>{{ hbase_rootdir }}</value>
+  </property>
+  <property>
+    <name>hbase.zookeeper.quorum</name>
+    <value>{{ hbase_zk_quorum }}</value>
+  </property>
+  <property>
+    <name>hbase.zookeeper.property.clientPort</name>
+    <value>{{ zk_client_port }}</value>
+  </property>
+  <property>
+    <name>hbase.tmp.dir</name>
+    <value>{{ hbase_tmp_dir }}</value>
+  </property>
+{% if hbase_rootdir.startswith('file://') %}
+  <property>
+    <name>hbase.unsafe.stream.capability.enforce</name>
+    <value>false</value>
+  </property>
+{% endif %}
+</configuration>

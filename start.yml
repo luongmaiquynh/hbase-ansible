@@ -1,0 +1,79 @@
+---
+# Bật theo thứ tự: ZooKeeper -> (chờ HDFS) -> HMaster -> RegionServer
+# HDFS do người quản lý Hadoop bật; playbook chỉ chờ, không bật HDFS.
+- name: Bật ZooKeeper
+  hosts: zookeeper
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Bật ZooKeeper nếu chưa chạy
+      ansible.builtin.shell: |
+        set -o pipefail
+        if {{ java_home }}/bin/jps | grep -q QuorumPeerMain; then
+          echo "already running"
+        else
+          {{ zk_link }}/bin/zkServer.sh start
+        fi
+      args:
+        executable: /bin/bash
+      register: zk_start
+      changed_when: "'already running' not in zk_start.stdout"
+
+    - name: Chờ cổng ZooKeeper mở
+      ansible.builtin.wait_for:
+        port: "{{ zk_client_port }}"
+        timeout: 60
+
+- name: Chờ HDFS sẵn sàng
+  hosts: "{{ groups['hbase_master'][0] }}"
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Chờ HDFS thoát safe mode
+      ansible.builtin.command: "{{ hadoop_home }}/bin/hdfs dfsadmin -safemode get"
+      register: safemode
+      until: "'Safe mode is OFF' in safemode.stdout"
+      retries: 20
+      delay: 15
+      changed_when: false
+
+- name: Bật HMaster
+  hosts: hbase_master
+  gather_facts: false
+  serial: 1
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Bật HMaster nếu chưa chạy
+      ansible.builtin.shell: |
+        set -o pipefail
+        if {{ java_home }}/bin/jps | grep -q HMaster; then
+          echo "already running"
+        else
+          {{ hbase_link }}/bin/hbase-daemon.sh start master
+        fi
+      args:
+        executable: /bin/bash
+      register: hm_start
+      changed_when: "'already running' not in hm_start.stdout"
+
+- name: Bật RegionServer
+  hosts: hbase_regionserver
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: Bật RegionServer nếu chưa chạy
+      ansible.builtin.shell: |
+        set -o pipefail
+        if {{ java_home }}/bin/jps | grep -q HRegionServer; then
+          echo "already running"
+        else
+          {{ hbase_link }}/bin/hbase-daemon.sh start regionserver
+        fi
+      args:
+        executable: /bin/bash
+      register: rs_start
+      changed_when: "'already running' not in rs_start.stdout"

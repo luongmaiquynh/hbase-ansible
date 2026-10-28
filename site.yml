@@ -1,0 +1,30 @@
+---
+# Cài đặt và cấu hình ZooKeeper + HBase. Không khởi động dịch vụ.
+# Chạy: ansible-playbook site.yml -K
+- name: Chuẩn bị chung
+  hosts: zookeeper:hbase
+  gather_facts: false
+  roles:
+    - common
+
+- name: Cài ZooKeeper
+  hosts: zookeeper
+  gather_facts: false
+  roles:
+    - zookeeper
+
+- name: Cài HBase
+  hosts: hbase
+  gather_facts: false
+  roles:
+    - hbase
+
+- name: Hướng dẫn bước tiếp theo
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: In bước tiếp theo
+      ansible.builtin.debug:
+        msg:
+          - "Cài đặt xong. Bật dịch vụ: ansible-playbook start.yml"
+          - "HDFS phải đang chạy và đã thoát safe mode trước khi bật HBase."

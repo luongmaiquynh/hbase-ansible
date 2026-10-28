@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+export JAVA_HOME={{ java_home }}
+export HBASE_LOG_DIR={{ hbase_log_dir }}
+export HBASE_PID_DIR={{ hbase_pid_dir }}
+export HBASE_MANAGES_ZK={{ hbase_manages_zk | bool | lower }}
+export HBASE_DISABLE_HADOOP_CLASSPATH_LOOKUP=true

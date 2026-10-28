@@ -1,0 +1,105 @@
+---
+- name: ZooKeeper | Kiểm tra tarball đã có trên server chưa
+  ansible.builtin.stat:
+    path: "{{ install_root }}/{{ zk_tarball }}"
+  register: zookeeper_remote_tar
+
+- name: ZooKeeper | Tải tarball trực tiếp trên server
+  ansible.builtin.get_url:
+    url: "{{ zk_download_url }}"
+    dest: "{{ install_root }}/{{ zk_tarball }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+    timeout: 60
+  register: zookeeper_download
+  until: zookeeper_download is succeeded
+  retries: 3
+  delay: 10
+  when:
+    - not zookeeper_remote_tar.stat.exists
+    - download_on_server | bool
+
+- name: ZooKeeper | Chép tarball từ máy chạy Ansible lên server
+  ansible.builtin.copy:
+    src: "{{ tarball_src_dir }}/{{ zk_tarball }}"
+    dest: "{{ install_root }}/{{ zk_tarball }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+  when:
+    - not zookeeper_remote_tar.stat.exists
+    - not download_on_server | bool
+
+- name: ZooKeeper | Kiểm tra checksum SHA-512
+  ansible.builtin.stat:
+    path: "{{ install_root }}/{{ zk_tarball }}"
+    checksum_algorithm: sha512
+  register: zookeeper_tar_sum
+  when: zk_sha512 is defined
+
+- name: ZooKeeper | Dừng nếu checksum sai
+  ansible.builtin.assert:
+    that: zookeeper_tar_sum.stat.checksum == (zk_sha512 | lower | replace(' ', ''))
+    fail_msg: "Checksum {{ zk_tarball }} không khớp, tải lại file."
+    quiet: true
+  when: zk_sha512 is defined
+
+- name: ZooKeeper | Tạo thư mục cài đặt
+  ansible.builtin.file:
+    path: "{{ zk_home }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0755"
+
+- name: ZooKeeper | Giải nén
+  ansible.builtin.unarchive:
+    src: "{{ install_root }}/{{ zk_tarball }}"
+    dest: "{{ zk_home }}"
+    remote_src: true
+    extra_opts: ["--strip-components=1"]
+    creates: "{{ zk_home }}/bin/zkServer.sh"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+
+- name: ZooKeeper | Symlink {{ zk_link }}
+  ansible.builtin.file:
+    src: "{{ zk_home }}"
+    dest: "{{ zk_link }}"
+    state: link
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    force: true
+
+- name: ZooKeeper | Tạo thư mục dữ liệu và log
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0755"
+  loop:
+    - "{{ zk_data_dir }}"
+    - "{{ zk_log_dir }}"
+
+- name: ZooKeeper | Ghi myid (chỉ cần khi có nhiều node)
+  ansible.builtin.copy:
+    content: "{{ groups['zookeeper'].index(inventory_hostname) + 1 }}\n"
+    dest: "{{ zk_data_dir }}/myid"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+  when: groups['zookeeper'] | length > 1
+
+- name: ZooKeeper | Cấu hình zoo.cfg và zookeeper-env.sh
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ zk_home }}/conf/{{ item }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0644"
+    backup: true
+  loop:
+    - zoo.cfg
+    - zookeeper-env.sh

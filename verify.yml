@@ -1,0 +1,72 @@
+---
+# Kiểm tra sau cài đặt: tiến trình, ZooKeeper, HBase status, HDFS fsck
+- name: Kiểm tra tiến trình trên từng node
+  hosts: zookeeper:hbase
+  gather_facts: false
+  tasks:
+    - name: Liệt kê tiến trình Java
+      ansible.builtin.command: "{{ java_home }}/bin/jps -l"
+      register: jps_out
+      changed_when: false
+
+    - name: Kiểm tra ZooKeeper trên node ZooKeeper
+      ansible.builtin.assert:
+        that: "'QuorumPeerMain' in jps_out.stdout"
+        fail_msg: "ZooKeeper không chạy trên {{ inventory_hostname }}"
+        quiet: true
+      when: inventory_hostname in groups['zookeeper']
+
+    - name: Kiểm tra HMaster trên node master
+      ansible.builtin.assert:
+        that: "'HMaster' in jps_out.stdout"
+        fail_msg: "HMaster không chạy trên {{ inventory_hostname }}"
+        quiet: true
+      when: inventory_hostname in groups['hbase_master']
+
+    - name: Kiểm tra RegionServer trên node regionserver
+      ansible.builtin.assert:
+        that: "'HRegionServer' in jps_out.stdout"
+        fail_msg: "RegionServer không chạy trên {{ inventory_hostname }}"
+        quiet: true
+      when: inventory_hostname in groups['hbase_regionserver']
+
+    - name: Không còn ZooKeeper nhúng (HQuorumPeer)
+      ansible.builtin.assert:
+        that: "'HQuorumPeer' not in jps_out.stdout"
+        fail_msg: "HQuorumPeer vẫn chạy: kiểm tra HBASE_MANAGES_ZK"
+        quiet: true
+      when: not (hbase_manages_zk | bool)
+
+- name: Kiểm tra trạng thái cụm
+  hosts: "{{ groups['hbase_master'][0] }}"
+  gather_facts: false
+  environment:
+    JAVA_HOME: "{{ java_home }}"
+  tasks:
+    - name: HBase status
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "status" | {{ hbase_link }}/bin/hbase shell -n 2>/dev/null | grep -E "active master"
+      args:
+        executable: /bin/bash
+      register: hbase_status
+      changed_when: false
+
+    - name: Phải có 0 dead server
+      ansible.builtin.assert:
+        that: "' 0 dead' in hbase_status.stdout"
+        fail_msg: "{{ hbase_status.stdout }}"
+        success_msg: "{{ hbase_status.stdout }}"
+
+    - name: HDFS fsck
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ hadoop_home }}/bin/hdfs fsck / 2>/dev/null | grep -E "Under-replicated blocks|Missing blocks:|Corrupt blocks:"
+      args:
+        executable: /bin/bash
+      register: fsck_out
+      changed_when: false
+
+    - name: In kết quả fsck
+      ansible.builtin.debug:
+        var: fsck_out.stdout_lines

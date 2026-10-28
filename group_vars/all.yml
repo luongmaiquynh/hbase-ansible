@@ -1,0 +1,63 @@
+---
+# ============ Thư mục và tài khoản ============
+install_root: /opt/hbase
+service_user: ubuntu
+service_group: ubuntu
+
+# Java dùng chung với Hadoop (playbook không cài Java, chỉ kiểm tra)
+java_home: /opt/amazon-corretto-17.0.20.12.1-linux-x64
+
+# Hadoop do người khác quản lý; playbook chỉ đọc cấu hình của nó
+hadoop_home: "{{ install_root }}/hadoop-3.4.3"
+hadoop_conf_dir: "{{ hadoop_home }}/etc/hadoop"
+
+# ============ File cài đặt ============
+# Thứ tự: server đã có tarball trong install_root -> dùng luôn;
+# chưa có -> tải trên server (download_on_server: true)
+#           hoặc chép từ thư mục files/ của máy chạy Ansible (false).
+# dlcdn.apache.org chỉ giữ bản mới nhất; nếu báo 404 đổi sang
+# https://archive.apache.org/dist/...
+download_on_server: true
+apache_mirror: "https://dlcdn.apache.org"
+tarball_src_dir: "{{ playbook_dir }}/files"
+
+# ============ ZooKeeper ============
+zk_version: "3.8.7"
+zk_tarball: "apache-zookeeper-{{ zk_version }}-bin.tar.gz"
+zk_download_url: "{{ apache_mirror }}/zookeeper/zookeeper-{{ zk_version }}/{{ zk_tarball }}"
+zk_home: "{{ install_root }}/zookeeper-{{ zk_version }}"
+zk_link: "{{ install_root }}/zookeeper"
+zk_data_dir: "{{ install_root }}/data/zk"
+zk_log_dir: "{{ install_root }}/logs/zookeeper"
+zk_client_port: 2181
+zk_admin_port: 8081          # 8080 mặc định dễ đụng Tomcat/dịch vụ khác
+zk_peer_port: 2888
+zk_election_port: 3888
+# zk_sha512: "<mã sha512>"   # bật để kiểm tra checksum
+
+# ============ HBase ============
+hbase_version: "2.6.7"
+hbase_tarball: "hbase-{{ hbase_version }}-hadoop3-bin.tar.gz"
+hbase_download_url: "{{ apache_mirror }}/hbase/{{ hbase_version }}/{{ hbase_tarball }}"
+hbase_home: "{{ install_root }}/hbase-{{ hbase_version }}-hadoop3"
+hbase_link: "{{ install_root }}/current"
+hbase_log_dir: "{{ install_root }}/logs"
+hbase_pid_dir: "{{ install_root }}/pids"
+hbase_tmp_dir: "{{ install_root }}/data/tmp"
+# hbase_sha512: "<mã sha512>"
+
+# Phải khớp fs.defaultFS trong core-site.xml của Hadoop
+hbase_rootdir: "hdfs://localhost:9000/hbase"
+
+# false = dùng ZooKeeper cài riêng (role zookeeper)
+hbase_manages_zk: false
+
+# Danh sách ZooKeeper cho HBase, mặc định lấy từ nhóm [zookeeper]
+hbase_zk_quorum: "{{ groups['zookeeper'] | map('extract', hostvars, 'ansible_host') | join(',') }}"
+
+# Liên kết core-site.xml / hdfs-site.xml của Hadoop vào conf HBase
+# (để HBase dùng đúng dfs.replication)
+hbase_link_hadoop_conf: true
+
+# Thêm HBASE_HOME vào ~/.bashrc (chỉ thêm, không xóa dòng có sẵn)
+manage_bashrc: true

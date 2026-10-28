@@ -1,0 +1,34 @@
+---
+- name: Kiểm tra Java đã có trên server
+  ansible.builtin.stat:
+    path: "{{ java_home }}/bin/java"
+  register: common_java_bin
+
+- name: Dừng nếu không tìm thấy Java
+  ansible.builtin.assert:
+    that: common_java_bin.stat.exists
+    fail_msg: >-
+      Không thấy {{ java_home }}/bin/java. Cài Java 17 trước
+      hoặc sửa biến java_home trong group_vars/all.yml.
+    quiet: true
+
+- name: Tạo thư mục gốc {{ install_root }}
+  ansible.builtin.file:
+    path: "{{ install_root }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0775"
+  become: true
+
+- name: Tạo thư mục dữ liệu, log, PID
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0775"
+  loop:
+    - "{{ install_root }}/data"
+    - "{{ hbase_log_dir }}"
+    - "{{ hbase_pid_dir }}"
