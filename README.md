@@ -24,7 +24,7 @@ hbase-ansible/
     └── hbase/                 # giải nén, hbase-env.sh, hbase-site.xml, link cấu hình Hadoop
 ```
 
-## Chuẩn bị (trên máy chạy Ansible, ví dụ MacBook)
+## Chuẩn bị (trên máy chạy Ansible)
 
 ```bash
 pip3 install ansible-core          # hoặc: brew install ansible
